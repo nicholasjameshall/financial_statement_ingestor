@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+  <script>
+  
+    let accountId;
+    
+    class DbActionStatus {
+      static IN_PROGRESS = "IN_PROGRESS"
+      static SUCCESS = "SUCCESS"
+      static FAILURE = "FAILURE"
+    }
+
+    class DbActionMessage {
+      static DB_READ_IN_PROGRESS = "Retrieving files...";
+      static DB_READ_SUCCESS = "Latest files retrieved.";
+      static DB_READ_FAILURE = "Failed to retrieve latest files.";
+      
+      static DB_WRITE_IN_PROGRESS = "Writing data...";
+      static DB_WRITE_SUCCESS = "Database successfully updated.";
+      static DB_WRITE_FAILURE = "Database write failed.";
+      static DB_WRITE_NO_NEW_ROWS = "No new rows. Database not updated."
+    }
+
+    class CsvFileDetails {
+      id;
+      name;
+      uploadedDate;
+
+      constructor(id, name, uploadedDate) {
+        this.id = id;
+        this.name = name;
+        this.uploadedDate = uploadedDate;
+      }
+
+      getId() {
+        return this.id;
+      }
+
+      getName() {
+        return this.name;
+      }
+
+      getUploadedDate() {
+        return this.uploadedDate;
+      }
+    }
+    
+    function showMessage(message, status) {
+      let infoBox = document.getElementById("user-message");
+      let infoBoxClasses = infoBox.classList;
+
+      let classes = {
+        "IN_PROGRESS": "in-progress",
+        "SUCCESS": "success",
+        "FAILURE": "failure"
+      }
+
+      infoBoxClasses.add(classes[status]);
+
+      infoBox.setAttribute("class", "info-box-info " + classes[status]);
+      infoBox.innerHTML = message;
+
+      if(status == DbActionStatus.SUCCESS || DbActionMessage.FAILURE) {
+        setTimeout(function() {
+          infoBox.innerHTML = "";
+          infoBoxClasses.remove(classes[status]);
+        }, 2000)
+      }
+
+      infoBoxClasses.add(classes[status]);
+
+    }
+    
+    function onFileRetrievalSuccess(files) {
+    
+      let csvFileDetailsList = [];
+      
+      files.forEach(function(file) {
+        let csvFileDetails = new CsvFileDetails(
+          file.id,
+          file.name,
+          file.date_created
+        );
+        
+        csvFileDetailsList.push(csvFileDetails);
+      });
+      
+      let csvFileDetailsCard = document.getElementById("file-card");
+      
+      showMessage(
+        DbActionMessage.DB_READ_SUCCESS,
+        DbActionStatus.SUCCESS
+      );
+      
+      displayFileDetails(csvFileDetailsCard, csvFileDetailsList);
+    }
+    
+    function onFileRetrievalFailure() {
+      showMessage(
+        DbActionMessage.DB_READ_FAILURE,
+        DbActionStatus.FAILURE
+      );
+    }
+    
+    function onDataWriteFailure(failure) {
+      showMessage(
+        DbActionMessage.DB_WRITE_FAILURE,
+        DbActionStatus.FAILURE
+      );
+      
+      console.log(failure.message);
+      console.log(failure.name);
+      console.log(failure);
+    
+    }
+    
+    function onDataWriteSuccess(result) {
+    
+      if(result == "SUCCESS") {
+        showMessage(
+          DbActionMessage.DB_WRITE_SUCCESS,
+          DbActionStatus.SUCCESS
+        );
+      } else {
+        showMessage(
+          DbActionMessage.DB_WRITE_NO_NEW_ROWS,
+          DbActionStatus.FAILURE
+        );      
+      }
+      
+      console.log(result);
+
+    }
+
+    function displayFileDetails(destination, fileDetails) {
+      destination.innerHTML = "";
+      let rows = [];
+
+      for(let i = 0; i < fileDetails.length; i++) {
+        let row = document.createElement("div");
+        row.setAttribute("id", fileDetails[i].getId())
+        row.setAttribute("class", "card-row file");
+        row.innerHTML = 
+          fileDetails[i].getName() +
+          '<br>' +
+          '<span style="font-size: 11px">' +
+          'Uploaded: ' + fileDetails[i].getUploadedDate() +
+          '</span>';
+        destination.appendChild(row);
+
+        rows.push(row);
+      }
+
+      for(let i = 0; i < rows.length; i++) {
+        let row = rows[i];
+        row.addEventListener("click", function() {
+          let csvId = row.getAttribute("id");
+                   
+          showMessage(
+            DbActionMessage.DB_WRITE_IN_PROGRESS,
+            DbActionMessage.IN_PROGRESS
+           );
+
+          google.script.run
+            .withFailureHandler(onDataWriteFailure)
+            .withSuccessHandler(onDataWriteSuccess)
+            .addStatementToSpreadsheet(accountId, csvId);
+        });
+      }
+    }
+
+    function setAccountAsSelected(accountSelectors, accountSelector) {
+      for(let j = 0; j < accountSelectors.length; j++) {
+        console.log(accountSelectors[j].setAttribute("class", "card-row account"));
+      }
+
+      accountSelector.setAttribute("class", "card-row account selected");
+    }
+
+  </script>
+
+  <style>
+  	
+  	body {
+  	  background-color: #e1e1e1;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+  	}
+
+  	.container {
+  	  
+  	}
+
+    .header {
+      width:100%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.23);
+      height: 30px;
+      background-color: #1a73e8;
+      color:white;
+      padding:20px;
+      line-height: 26px;
+      font-size: 26px;
+    }
+
+    .row {
+      display: flex;
+    }
+
+  	.card {
+      box-shadow: 0 1px 3px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.23);
+      overflow: auto;
+      margin: 20px;
+      background-color: white;
+      border-radius: 4px;
+  	}
+
+      .small {
+        flex: 1;
+      }
+
+      .large {
+        flex: 5;
+      }
+
+      .card-title {
+        background-color: #f1f1f1;
+        padding:20px;
+        line-height: 24px;
+        font-size: 24px;
+        border-radius: 4px 4px 0 0;
+      }
+
+      .card-content {
+        padding: 20px;
+        overflow: auto;
+      }
+
+      .card-row {
+        padding: 20px;
+        overflow: auto;
+        cursor: pointer;
+      }
+
+        .card-row:hover {
+          background-color: #f1f1f1;
+          /* background-color: rgb(79, 195, 247); */
+        }
+
+        .account {
+        
+        }
+
+        .selected {
+          background-color: #f1f1f1;
+          font-weight: bold;
+        }
+
+    .info-box {
+      display: flex;
+      flex: 1;
+    }
+
+      .info-box-img {
+        flex: 1;
+        padding:20px;
+        text-align: center;
+        line-height: 16px;
+      }
+
+      .info-box-info {
+        flex: 9;
+        padding:20px;
+        overflow: auto;
+        line-height: 16px;
+      }
+
+        .in-progress {
+          color: black;
+        }
+
+        .success {
+          color: green;
+        }
+
+        .failure {
+          color: red;
+        }
+
+  </style>
+
+</head>
+
+<body>
+
+  <div class="header">
+    Personal Finance Client
+  </div>
+
+  <div class="container">
+
+    <div class="row">
+    
+      <div class="card small">
+        <div class="card-title">
+          Select Account
+        </div>
+        <div class="card-row account" id="UBS_DEBIT">
+          UBS Debit <br>
+          <span style="font-size: 11px">Swiss Francs (CHF)</span>
+        </div>
+        <div class="card-row account" id="UBS_CREDIT">
+          UBS Credit <br>
+          <span style="font-size: 11px">Swiss Francs (CHF)</span>
+        </div>
+        <div class="card-row account" id="REVOLUT_DEBIT">
+          Revolut Debit <br>
+          <span style="font-size: 11px">Swiss Francs (CHF)</span>
+        </div>
+        <div class="card-row account" id="REVOLUT_DEBIT">
+          Saphhire Credit <br>
+          <span style="font-size: 11px">United States Dollar (USD)</span>
+        </div>
+      </div>
+
+      <div class="card large">
+        <div class="card-title">
+          Select CSV File
+        </div>
+        <div id="file-card"></div>
+      </div>
+      
+
+    </div>
+
+    <div class="row">
+    
+      <div class="info-box" id="user-message">
+        <div class="info-box-img"></div>
+        <div class="info-box-info"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    
+    let accountSelectors = document.getElementsByClassName("account");
+
+    for(let i = 0; i < accountSelectors.length; i++) {
+
+      let accountSelector = accountSelectors[i];
+      let fileDetailsCard = document.getElementById("file-card");
+
+      accountSelector.addEventListener("click", function() {
+      
+        let fileDetailsCard = document.getElementById("file-card");
+        fileDetailsCard.innerHTML = "";
+      
+        accountId = accountSelector.getAttribute("id");
+        
+        setAccountAsSelected(accountSelectors, accountSelector);
+        
+        showMessage(
+          DbActionMessage.DB_READ_IN_PROGRESS,
+          DbActionStatus.IN_PROGRESS
+        );
+        
+        google.script.run
+          .withFailureHandler(onFileRetrievalFailure)
+          .withSuccessHandler(onFileRetrievalSuccess)
+          .getLatestThreeCsvFiles(accountId);
+
+      });
+    }
+
+  </script>
+
+</body>
+
+</html>
