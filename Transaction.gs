@@ -1,20 +1,23 @@
 /*
   This class represents a Transaction.
 */
-var Transaction = function() {
-  this.date = null;
-  this.month = null;
-  this.desc = null;
-  this.debit = null;
-  this.credit = null;
-  this.balance = null;
+class Transaction {
+  constructor(build) {
+    this.date = build.date;
+    this.month = build.month;
+    this.desc = build.desc;
+    this.debit = build.debit;
+    this.credit = build.credit;
+    this.balance = build.balance;
+    this.category = build.category;
+  }
   
-  this.toArray = function() {
+  toArray() {
     return [
       this.date,
       this.month,
       this.desc,
-      "", // Blank for category
+      this.category,
       "", // Blank for theme
       this.debit,
       this.credit,
@@ -22,55 +25,48 @@ var Transaction = function() {
     ];
   }
   
-  this.getDate = function() {
+  getDate() {
     return this.date; 
   }
 
-  var Builder = function() {
-    this.date = null;
-    this.month = null;
-    this.desc = null;
-    this.debit = null;
-    this.credit = null;
-    this.balance = null;
-
-    this.onDate = function(date) {
-      this.date = date;
-      this.month = date.getFullYear().toString() + "-" + (date.getMonth() +1).toString();
-      return this;
+  static get Builder() {
+    class Builder {
+    
+      onDate(date) {
+        this.date = date;
+        this.month = date.getFullYear().toString() + "-" + (date.getMonth() +1).toString();
+        return this;
+      }
+  
+      withDesc(desc) {
+        this.desc = desc;
+        return this;
+      }
+  
+      withDebit(debit) {
+        this.debit = debit;
+        return this;
+      }
+  
+      withCredit(credit) {
+        this.credit = credit;
+        return this;
+      }
+  
+      withBalance(balance) {
+        this.balance = balance;
+        return this;
+      }
+      
+      inCategory(category) {
+        this.category = category;
+        return this;
+      }
+  
+      build() {
+        return new Transaction(this);
+      }
     }
-
-    this.withDesc = function(desc) {
-      this.desc = desc;
-      return this;
-    }
-
-    this.withDebit = function(debit) {
-      this.debit = debit;
-      return this;
-    }
-
-    this.withCredit = function(credit) {
-      this.credit = credit;
-      return this;
-    }
-
-    this.withBalance = function(balance) {
-      this.balance = balance;
-      return this;
-    }
-
-    this.build = function() {
-      var transaction = new Transaction();
-      transaction.date = this.date;
-      transaction.month = this.month;
-      transaction.desc = this.desc;
-      transaction.debit = this.debit;
-      transaction.credit = this.credit;
-      transaction.balance = this.balance;
-      return transaction;
-    }
+    return Builder;
   }
-
-  this.builder = new Builder();
 }
