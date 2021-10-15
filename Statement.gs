@@ -1,9 +1,69 @@
 /*
-  This class represents a Statement.
+  This class represents a new statement to be merged with the finance spreadsheet.
 */
 class Statement {
   constructor() {
+    this.account;
     this.transactions = [];
+  }
+
+  addTransaction(row) {
+    if(typeof row != 'undefined' && row !== null) {
+      this.transactions.push(row);
+    }
+  }
+  
+  toArray() {
+    return this.transactions.map(transaction => 
+      transaction.toArray()
+    );
+  }
+
+  removeDuplicateTransactions(sheet) {
+    let newTransactions = this.transactions;
+    let savedTransactions = sheet
+      .getRange(
+        2,
+        1,
+        sheet.getLastRow(),
+        sheet.getLastColumn()
+      ).getValues();
+    
+    let savedTransactionsByDate = {};
+    
+    for(const transaction of savedTransactions) {
+      let trans = new Transaction.Builder()
+        .setDate(new Date(transaction[0]))
+        .setSource(transaction[1])
+        .setDesc(transaction[2])
+        .setCategory(transaction[3])
+        .setValue(transaction[5])
+        .build();
+      
+      let date = trans.dateString;
+      
+      if(!(date in savedTransactionsByDate)) {
+        savedTransactionsByDate[date] = [trans.value]; 
+      } else {
+        savedTransactionsByDate[date].push(trans.value); 
+      }
+    }
+    
+    let eligibleTransactions = [];
+    
+    for(const transaction of newTransactions) {
+      let date = transaction.dateString;
+      
+      if(date in savedTransactionsByDate) {     
+        if(!(savedTransactionsByDate[date].includes(transaction.value))) {
+          eligibleTransactions.push(transaction);
+        }
+      } else {
+        eligibleTransactions.push(transaction); 
+      }
+    }
+    
+    this.transactions = eligibleTransactions;
   }
   
   static get Builder() {
@@ -15,13 +75,8 @@ class Statement {
         return this;
       }
       
-      ofAccount(account) {
+      setAccount(account) {
         this.account = account;
-        return this;
-      }
-      
-      fromDate(fromDate) {
-        this.fromDate = fromDate;
         return this;
       }
       
@@ -32,24 +87,8 @@ class Statement {
     return Builder;
   }
   
-  getNumTransactions() {
+  get numTransactions() {
     return this.transactions.length; 
-  }
-  
-  addTransaction(row) {
-    if(typeof row != 'undefined' && row !== null) {
-      this.transactions.push(row);
-    }
-  }
-  
-  toArray() {
-    let rowArray = [];
-    
-    for (let i = 0; i < this.transactions.length; i++) {
-      rowArray.push(this.transactions[i].toArray());
-    }
-    
-    return rowArray;
   }
   
 }
@@ -58,73 +97,75 @@ class StatementBuilder {
   constructor(build) {
     this.csvFile = build.csvFile;
     this.account = build.account;
-    this.fromDate = build.fromDate;
   }
   
   buildStatement() {
     let csvString = this.csvFile.getBlob().getDataAsString();
-    let csletray = Utilities.parseCsv(csvString, "\;").splice(1);
     
     let statement = new Statement();
-    let transData;
-            
-    // Starts from the first row to avoid column headers.
-    for(let i = 0; i < csletray.length; i++) {      
-      switch(this.account.getName()) {
-        case "UBS_DEBIT":
-          transData = this._getUbsDebitTransactionData(csletray[i]);
-          break;
-        case "UBS_CREDIT":
-          transData = this._getUbsCreditTransactionData(csletray[i]);
-          break;
-        case "REVOLUT_DEBIT":
-          transData = this._getRevolutDebitTransactionData(csletray[i]);
-          break;
-      };
-      
-      if(transData !== null 
-         && transData.date > this.fromDate) {        
-        let transaction = new Transaction.Builder()
-          .onDate(transData.date)
-          .withDesc(transData.desc)
-          .withDebit(transData.debit)
-          .withCredit(transData.credit)
-          .withBalance(transData.balance)
-          .inCategory(transData.category)
-          .build();
-        
-        statement.addTransaction(transaction);
+    statement.account = this.account;
+    let transactions = [];
+
+    if(this.account.name == Constants.accountNames.UBS_DEBIT_CHF) {
+      let rows = Utilities.parseCsv(csvString, "\;").splice(1);
+      for(let row of rows) {
+        let transaction = this._buildUbsDebitTransaction(row);
+        transaction !== null ? transactions.push(transaction) : null;
       }
     }
-    
-    statement.transactions.sort(UtilityClass.sortByDate)
-    
+
+    if(this.account.name == Constants.accountNames.UBS_CREDIT_CHF) {
+      let rows = Utilities.parseCsv(csvString, "\;").splice(1);
+      for(let row of rows) {
+        let transaction = this._buildUbsCreditTransaction(row);
+        transaction !== null ? transactions.push(transaction) : null;
+      }
+    }
+
+    if(this.account.name == Constants.accountNames.REVOLUT_DEBIT_CHF) {
+      // Removes comma from numbers in quotation marks
+      csvString.match(/("[^,]+),(.+")/g).forEach(t =>
+        csvString = csvString.split(t).join(t.replace(/,/g,''))
+      );
+      let rows = Utilities.parseCsv(csvString).splice(1);
+      for(let row of rows) {
+        let transaction = this._buildRevolutDebitTransaction(row);
+        transaction !== null ? transactions.push(transaction) : null;
+      }
+    }
+
+    if(this.account.name == Constants.accountNames.NEON_DEBIT_CHF) {
+      let rows = Utilities.parseCsv(csvString).splice(1);
+      for(let row of rows) {
+        let transaction = this._buildNeonDebitTransaction(row);
+        transaction !== null ? transactions.push(transaction) : null;
+      }
+    }
+
+    statement.transactions = transactions;
     return statement;
    
   }
   
-  _getUbsDebitTransactionData(row) {
-    let transData = {};
+  _buildUbsDebitTransaction(row) {
+    let balance = this._formatNumber(row[20]);
+    let debit = this._formatNumber(row[18]);
+    let credit = this._formatNumber(row[19]);
     
-    transData.balance = this._formatNumber(row[20]);
-    transData.debit = this._formatNumber(row[18]);
-    transData.credit = this._formatNumber(row[19]);
-    
-    if(transData.balance !== "" && 
-       (transData.debit > 0 || transData.credit > 0)) {
-      transData.date = this._formatDate(row[9]);
-      transData.desc = row[13] + row[14];
-      transData.category = this._getCategory(transData.desc);
-
-      return transData;
+    if(balance !== "" && (debit > 0 || credit > 0)) {
+      return new Transaction.Builder()
+        .setDate(this._formatDate(row[9]))
+        .setSource(Constants.accountNames.UBS_DEBIT_CHF)
+        .setDesc(row[13] + row[14])
+        .setValue(debit > 0 ? -Math.abs(debit) : credit)
+        .setCategory(this._getCategory(row[13] + row[14]))
+        .build();
     }
     
     return null;
   }
   
-  _getUbsCreditTransactionData(row) {
-    let transData = {};
-    
+  _buildUbsCreditTransaction(row) {
     let cardHolder = row[2];
     let cardNumber = row[1];
     let bookedDate = row[12];
@@ -132,29 +173,40 @@ class StatementBuilder {
     if(cardNumber !== "" && 
        bookedDate != "" && 
        cardHolder == "NICHOLAS HALL") {
-      transData.date = this._formatDate(row[3]);
-      transData.desc = row[4];
-      transData.debit = this._formatNumber(row[10]);
-      transData.credit = this._formatNumber(row[11]);
-      transData.balance = transData.credit > 0 ? -Math.abs(transData.credit) : transData.debit;
-      transData.category = this._getCategory(transData.desc);
+
+      let debit = this._formatNumber(row[10])
+      let credit = this._formatNumber(row[11])
       
-      return transData;
+      return new Transaction.Builder()
+        .setDate(this._formatDate(row[3]))
+        .setSource(Constants.accountNames.UBS_CREDIT_CHF)
+        .setDesc(row[4])
+        .setValue(debit > 0 ? -Math.abs(debit) : credit)
+        .setCategory(this._getCategory(row[4]))
+        .build();
     }
     
     return null;  
   }
   
-  _getRevolutDebitTransactionData(row) {
-    let transData = {};
-    transData.debit = row[2];
-    transData.credit = row[3];
-    transData.date = this._formatDate(row[0]);
-    transData.desc = row[1];
-    transData.balance = null; // Empty row
-    transData.category = this._getCategory(transData.desc);
-      
-    return transData;
+  _buildRevolutDebitTransaction(row) {    
+    return new Transaction.Builder()
+      .setDate(new Date(row[3]))
+      .setSource(Constants.accountNames.REVOLUT_DEBIT_CHF)
+      .setDesc(row[4])
+      .setValue(row[5])
+      .setCategory(this._getCategory(row[4]))
+      .build();
+  }
+
+  _buildNeonDebitTransaction(row) {
+    return new Transaction.Builder()
+      .setDate(new Date(row[0]))
+      .setSource(Constants.accountNames.NEON_DEBIT_CHF)
+      .setDesc(row[2])
+      .setValue(row[1])
+      .setCategory(this._getCategory(row[2]))
+      .build()
   }
   
   _getCategory(desc) {
@@ -162,27 +214,29 @@ class StatementBuilder {
   
     let CATEGORY_MAP = {
       "MIGRO": "Supermarket",
-      "PKE": "Electricity",
-      "CREDIT": "Credit Card",
-      
+      "COOP": "Supermarket",
+      "PKE": "Rent",
+      "CREDIT": "Credit card",
+      "SANITAS": "Healthcare",
+      "SALARY": "Salary",
+      "ELEKTRIZITAETSWERK": "Electricity",
       "REVOLUT": "Transfer",
       "TRANSFER": "Transfer",
-      
       "SBB": "Train",
-      
+      "BUNDESBAHN": "Train",
+      "EAT.CH": "Delivery",
       "NETFLIX": "Subscription",
       "YOUTUBE": "Subscription",
       "EXPRESSVPN": "Subscription",
-      
-      
+      "LINGUISTICA": "Subscription",
       "EASYJET": "Flights",
       "AMERICAN AIR": "Flights",
       "SWISS INTL": "Flights",
       "AERLING": "Flights",
       "AEROFLOT": "Flights",
-      
+      "BRITISH AIRWAYS": "Flights",
+      "B A INTERNET SALES": "Flights",
       "IKEA": "Furniture",
-      
       "CAFE": "Coffee",
       "COFFEE": "Coffee",
       "STARBUCKS": "Coffee"
@@ -190,32 +244,23 @@ class StatementBuilder {
     
     let keys = Object.keys(CATEGORY_MAP);
   
-    for(let i = 0; i < keys.length; i++) {
-      if(desc.match(keys[i])) {
-        return CATEGORY_MAP[keys[i]];
+    for(let key of keys) {
+      if(desc.match(key)) {
+        return CATEGORY_MAP[key];
       }
     }
     return "Unknown"
     
   }
   
-  _formatDate(dateString) {
-    if(this.account.getName() == "REVOLUT_DEBIT") {
-      let MONTHS_OF_YEAR = [ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" ];   
-      let parts = dateString.split(" ");
-      let year = parts[2];
-      let month = MONTHS_OF_YEAR.indexOf(parts[1]);
-      let day = parts[0];
-      
-      return new Date(year, month, day, 0, 0, 0, 0);
-
-    } else {
-      let year = dateString.substring(6);
-      let month = dateString.substring(3, 5);
-      let day = dateString.substring(0, 2);
+  _stringToDate(dateString) {
+    let date = dateString.split(".");
     
-      return new Date(year + "-" + month + "-" + day);
-    }
+    let year = date[2];
+    let month = date[1];
+    let day = date[0];
+  
+    return new Date(year + "-" + month + "-" + day);
   }
 
   _formatNumber(str) {
