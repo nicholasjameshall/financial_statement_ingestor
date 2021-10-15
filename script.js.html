@@ -1,0 +1,187 @@
+<script>
+
+  let accountId;
+  
+  class DbActionStatus {
+    static IN_PROGRESS = "IN_PROGRESS"
+    static SUCCESS = "SUCCESS"
+    static FAILURE = "FAILURE"
+  }
+
+  class DbActionMessage {
+    static DB_READ_IN_PROGRESS = "Retrieving files...";
+    static DB_READ_SUCCESS = "Latest files retrieved.";
+    static DB_READ_FAILURE = "Failed to retrieve latest files.";
+    
+    static DB_WRITE_IN_PROGRESS = "Writing data...";
+    static DB_WRITE_SUCCESS = "Database successfully updated.";
+    static DB_WRITE_FAILURE = "Database write failed.";
+    static DB_WRITE_NO_NEW_ROWS = "No new rows. Database not updated."
+  }
+
+  function onMasterSheetWriteSuccess() {
+    showMessage(
+      DbActionMessage.DB_WRITE_SUCCESS,
+      DbActionStatus.SUCCESS        
+    )
+  }
+
+  function onMasterSheetWriteFailure(e) {
+    showMessage(
+      DbActionMessage.DB_WRITE_FAILURE + " (" + e.message + ")",
+      DbActionStatus.FAILURE        
+    )
+  }
+  
+  function onFileRetrievalSuccess(resp) {
+    let files = JSON.parse(resp)
+    console.log(files.fileMetadataList);
+    
+    let csvFileDetailsCard = document.getElementById("file-card");
+    
+    showMessage(
+      DbActionMessage.DB_READ_SUCCESS,
+      DbActionStatus.SUCCESS
+    );
+    
+    displayFileDetails(csvFileDetailsCard, files.fileMetadataList);
+  }
+  
+  function onFileRetrievalFailure(e) {
+    showMessage(
+      DbActionMessage.DB_READ_FAILURE + " (" + e.message + ")",
+      DbActionStatus.FAILURE
+    );
+  }
+  
+  function onDataWriteSuccess(resp) {
+    respJson = JSON.parse(resp);
+
+      showMessage(
+        DbActionMessage.DB_WRITE_SUCCESS + " (" + respJson.numRowsAdded + " new rows added.)",
+        DbActionStatus.SUCCESS)
+  }
+
+  function onDataWriteFailure(e) {
+    showMessage(
+      DbActionMessage.DB_WRITE_FAILURE + " (" + e.message + ")",
+      DbActionStatus.FAILURE
+    );
+  
+  }
+  
+  function showMessage(message, status) {
+    let infoBox = document.getElementById("user-message");
+    let infoBoxClasses = infoBox.classList;
+
+    let classes = {
+      "IN_PROGRESS": "in-progress",
+      "SUCCESS": "success",
+      "FAILURE": "failure"
+    }
+
+    infoBoxClasses.add(classes[status]);
+
+    infoBox.setAttribute("class", "info-box-info " + classes[status]);
+    infoBox.innerHTML = message;
+
+    if(status == DbActionStatus.SUCCESS || DbActionMessage.FAILURE) {
+      setTimeout(function() {
+        infoBox.innerHTML = "";
+        infoBoxClasses.remove(classes[status]);
+      }, 2000)
+    }
+
+    infoBoxClasses.add(classes[status]);
+
+  }
+
+  function displayFileDetails(destination, files) {
+    destination.innerHTML = "";
+    let rows = [];
+
+    for(let file of files) {
+      let row = document.createElement("div");
+      row.setAttribute("id", file.id)
+      row.setAttribute("class", "card-row file");
+      row.innerHTML = 
+        file.name +
+        '<br>' +
+        '<span style="font-size: 11px">' +
+        'Uploaded: ' + file.dateCreated +
+        '</span>';
+      destination.appendChild(row);
+
+      rows.push(row);
+      console.log(rows);
+    }
+
+    for(let row of rows) {
+      row.addEventListener("click", function() {
+        console.log("LALALALA");
+        let csvId = row.getAttribute("id");
+                  
+        showMessage(
+          DbActionMessage.DB_WRITE_IN_PROGRESS,
+          DbActionMessage.IN_PROGRESS
+          );
+
+        google.script.run
+          .withFailureHandler(onDataWriteFailure)
+          .withSuccessHandler(onDataWriteSuccess)
+          .uploadCsv(accountId, csvId);
+      });
+    }
+  }
+
+  function setAccountAsSelected(accountSelectors, accountSelector) {
+    for(let j = 0; j < accountSelectors.length; j++) {
+      console.log(accountSelectors[j].setAttribute("class", "card-row account"));
+    }
+
+    accountSelector.setAttribute("class", "card-row account selected");
+  }
+
+  let accountSelectors = document.getElementsByClassName("account");
+  let updateMasterSheetButton = document.getElementById("master-sheet-button");
+
+  for(let accountSelector of accountSelectors) {
+
+    let fileDetailsCard = document.getElementById("file-card");
+
+    accountSelector.addEventListener("click", function() {
+    
+      let fileDetailsCard = document.getElementById("file-card");
+      fileDetailsCard.innerHTML = "";
+
+      accountId = accountSelector.getAttribute("id");
+      
+      setAccountAsSelected(accountSelectors, accountSelector);
+      
+      showMessage(
+        DbActionMessage.DB_READ_IN_PROGRESS,
+        DbActionStatus.IN_PROGRESS
+      );
+      
+      google.script.run
+        .withFailureHandler(onFileRetrievalFailure)
+        .withSuccessHandler(onFileRetrievalSuccess)
+        .getLatestCsvFiles(accountId, 4);
+
+    });
+  }
+  
+  updateMasterSheetButton.addEventListener("click", function() {
+    showMessage(
+      DbActionMessage.DB_WRITE_IN_PROGRESS,
+      DbActionStatus.IN_PROGRESS
+    );
+    
+    google.script.run
+      .withFailureHandler(onMasterSheetWriteFailure)
+      .withSuccessHandler(onMasterSheetWriteSuccess)
+      .updateMasterSheet();
+  });
+
+
+</script>
